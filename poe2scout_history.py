@@ -40,7 +40,7 @@ def get_currencies(league):
                 "category": category,
                 "page": page,
                 "perPage": 25,
-                "dataPoints": 1,
+                "dataPoints": 7,
                 "frequencyHours": 24
             })
 
