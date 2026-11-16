@@ -1,8 +1,40 @@
 import azure.functions as func
 import logging
+import json
+import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 
 app = func.FunctionApp()
+
+BASE_URL = "https://poe.ninja/poe2/api/economy"
+
+CATEGORIES = [
+    "Currency",
+    "Fragments",
+    "Abyss",
+    "UncutGems",
+    "LineageSupportGems",
+    "Essences",
+    "SoulCores",
+    "Idols",
+    "Runes",
+    "Ritual",
+    "Expedition",
+    "Delirium",
+    "Breach",
+    "Verisium",
+]
+
+HEADERS = {
+    "User-Agent": "poe2-trade-collector/0.1 (personal economy research; contact: ob61887@gmail.com)",
+    "Accept": "application/json",
+}
+
+def fetch_json(url):
+    request = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
 
 @app.timer_trigger(
     schedule="0 0 * * * *",
@@ -11,9 +43,58 @@ app = func.FunctionApp()
     use_monitor=True
 )
 def collect_poe2_prices(timer: func.TimerRequest) -> None:
-    logging.info("PoE 2 currency collector started")
-    logging.info(
-        "Execution time: %s",
-        datetime.now(timezone.utc).isoformat()
-    )
-    logging.info("PoE 2 currency collector completed")
+    timestamp = datetime.now(timezone.utc).isoformat()
+    logging.info("PoE 2 currency collector started: %s", timestamp)
+
+    try:
+        leagues = fetch_json(f"{BASE_URL}/leagues")
+        if not leagues:
+            raise ValueError("No active leagues returned")
+
+        league = leagues[0]["id"]
+        logging.info("Collecting league: %s", league)
+
+        total_items = 0
+        failures = []
+
+        for category in CATEGORIES:
+            try:
+                params = urllib.parse.urlencode({
+                    "league": league,
+                    "type": category,
+                })
+                url = f"{BASE_URL}/exchange/current/overview?{params}"
+
+                data = fetch_json(url)
+                lines = data.get("lines", [])
+                total_items += len(lines)
+
+                logging.info(
+                    "Category %s: %d price records; reference currency: %s",
+                    category,
+                    len(lines),
+                    data.get("core", {}).get("primary"),
+                )
+
+            except Exception as exc:
+                failures.append(category)
+                logging.error(
+                    "Failed to collect %s: %s",
+                    category,
+                    str(exc),
+                )
+
+        logging.info(
+            "Collection finished. Total records: %d; failed categories: %s",
+            total_items,
+            failures,
+        )
+
+        if failures:
+            raise RuntimeError(
+                f"Collection failed for: {', '.join(failures)}"
+            )
+
+    except Exception:
+        logging.exception("PoE 2 collector execution failed")
+        raise
