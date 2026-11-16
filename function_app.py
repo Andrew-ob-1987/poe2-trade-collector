@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from poe2scout_history import collect_history
+from ggg_backfill import run_backfill
 
 app = func.FunctionApp()
 
@@ -157,3 +158,56 @@ def collect_ggg_hourly(ggg_timer: func.TimerRequest) -> None:
     )
 
     logging.info("GGG collection completed: %d hourly digests", count)
+
+@app.route(
+    route="ggg/backfill",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def backfill_ggg_history(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+        if not isinstance(body, dict):
+            raise ValueError("Request body must be a JSON object")
+
+        start_id = body.get("start_id")
+        end_id = body.get("end_id")
+        batch_size = body.get("batch_size", 10)
+
+        blob_service = BlobServiceClient(
+            account_url=(
+                "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+            ),
+            credential=DefaultAzureCredential(),
+        )
+
+        result = run_backfill(
+            blob_service_client=blob_service,
+            container_name="poe2-prices",
+            start_id=start_id,
+            end_id=end_id,
+            batch_size=batch_size,
+        )
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except (ValueError, TypeError) as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("GGG historical backfill failed")
+        return func.HttpResponse(
+            json.dumps({
+                "error": "Backfill failed. Check Azure function logs."
+            }),
+            status_code=500,
+            mimetype="application/json",
+        )
