@@ -213,7 +213,7 @@ def backfill_ggg_history(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 @app.timer_trigger(
-    schedule="0 */1 * * * *",
+    schedule="0 */0 * * * *",
     arg_name="backfill_timer",
     run_on_startup=False,
     use_monitor=True,
