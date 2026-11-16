@@ -3,15 +3,12 @@ import logging
 import json
 import urllib.request
 import urllib.parse
-from datetime
-import datetime, timezone
 import os
-from azure.identity
-import DefaultAzureCredential
-from azure.storage.blob
-import BlobServiceClient
-from poe2scout_history
-import collect_history
+
+from datetime import datetime, timezone
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+from poe2scout_history import collect_history
 
 app = func.FunctionApp()
 
