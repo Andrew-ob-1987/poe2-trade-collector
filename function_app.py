@@ -211,3 +211,54 @@ def backfill_ggg_history(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json",
         )
+
+@app.timer_trigger(
+    schedule="0 */1 * * * *",
+    arg_name="backfill_timer",
+    run_on_startup=False,
+    use_monitor=True,
+)
+def auto_backfill_ggg_history(
+    backfill_timer: func.TimerRequest,
+) -> None:
+    """Resume an active GGG backfill every five minutes."""
+
+    logging.info("Checking for active GGG historical backfill")
+
+    blob_service = BlobServiceClient(
+        account_url=(
+            "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+        ),
+        credential=DefaultAzureCredential(),
+    )
+
+    container = blob_service.get_container_client("poe2-prices")
+
+    from ggg_backfill import read_state
+
+    state = read_state(container)
+
+    if not state:
+        logging.info("No historical backfill configured")
+        return
+
+    if state.get("status") == "completed":
+        logging.info("Historical backfill already completed")
+        return
+
+    if state.get("status") != "running":
+        logging.warning("Unknown backfill status: %s", state.get("status"))
+        return
+
+    result = run_backfill(
+        blob_service_client=blob_service,
+        container_name="poe2-prices",
+        batch_size=10,
+    )
+
+    logging.info(
+        "Backfill progress: %d processed, %d saved, status=%s",
+        result["processed"],
+        result["saved"],
+        result["status"],
+    )
