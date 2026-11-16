@@ -213,7 +213,7 @@ def backfill_ggg_history(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 @app.timer_trigger(
-    schedule="0 */0 * * * *",
+    schedule="0 * * * * *",
     arg_name="backfill_timer",
     run_on_startup=False,
     use_monitor=True,
@@ -253,7 +253,7 @@ def auto_backfill_ggg_history(
     result = run_backfill(
         blob_service_client=blob_service,
         container_name="poe2-prices",
-        batch_size=10,
+        batch_size=24,
     )
 
     logging.info(

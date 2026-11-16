@@ -54,8 +54,8 @@ def run_backfill(
     end_id=None,
     batch_size=10,
 ):
-    if type(batch_size) is not int or not 1 <= batch_size <= 20:
-        raise ValueError("batch_size must be between 1 and 20")
+    if type(batch_size) is not int or not 1 <= batch_size <= 24:
+        raise ValueError("batch_size must be between 1 and 24")
 
     container = blob_service_client.get_container_client(
         container_name
