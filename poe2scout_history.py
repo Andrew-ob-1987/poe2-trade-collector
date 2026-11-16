@@ -39,7 +39,7 @@ def get_currencies(league):
             params = urllib.parse.urlencode({
                 "category": category,
                 "page": page,
-                "perPage": 100,
+                "perPage": 25,
                 "dataPoints": 1,
                 "frequencyHours": 24
             })
@@ -49,6 +49,7 @@ def get_currencies(league):
                 f"?{params}"
             )
 
+            logging.info("Requesting POE2 Scout category %s: %s", category, url)
             data = fetch_json(url)
 
             for item in data.get("Items", []):
