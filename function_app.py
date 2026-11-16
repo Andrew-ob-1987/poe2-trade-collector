@@ -106,3 +106,34 @@ def collect_poe2_prices(timer: func.TimerRequest) -> None:
     except Exception:
         logging.exception("PoE 2 collector execution failed")
         raise
+
+@app.timer_trigger(
+    schedule="0 15 0 * * *",
+    arg_name="timer",
+    run_on_startup=False,
+    use_monitor=True
+)
+def collect_poe2_history(timer: func.TimerRequest) -> None:
+    logging.info("Starting POE2 Scout historical collection")
+
+    account_url = (
+        "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+    )
+
+    credential = DefaultAzureCredential()
+
+    blob_service = BlobServiceClient(
+        account_url=account_url,
+        credential=credential
+    )
+
+    count = collect_history(
+        league="forbiddenrites",
+        blob_service_client=blob_service,
+        container_name="poe2-prices"
+    )
+
+    logging.info(
+        "Historical collection completed: %s currencies",
+        count
+    )
