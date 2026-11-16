@@ -1,3 +1,4 @@
+from ggg_currency_exchange import collect_ggg_currency_exchange
 import azure.functions as func
 import logging
 import json
@@ -134,3 +135,25 @@ def collect_poe2_history(timer: func.TimerRequest) -> None:
         "Historical collection completed: %s currencies",
         count
     )
+
+
+@app.timer_trigger(
+    schedule="0 10 * * * *",
+    arg_name="ggg_timer",
+    run_on_startup=False,
+    use_monitor=True,
+)
+def collect_ggg_hourly(ggg_timer: func.TimerRequest) -> None:
+    logging.info("Starting GGG hourly Currency Exchange collection")
+
+    blob_service = BlobServiceClient(
+        account_url="https://poe2tradecollectorf8fb3.blob.core.windows.net",
+        credential=DefaultAzureCredential(),
+    )
+
+    count = collect_ggg_currency_exchange(
+        blob_service_client=blob_service,
+        container_name="poe2-prices",
+    )
+
+    logging.info("GGG collection completed: %d hourly digests", count)
