@@ -11,6 +11,7 @@ from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from poe2scout_history import collect_history
 from ggg_backfill import run_backfill
+from ggg_parquet import convert_hour
 
 app = func.FunctionApp()
 
@@ -262,3 +263,51 @@ def auto_backfill_ggg_history(
         result["saved"],
         result["status"],
     )
+
+@app.route(
+    route="ggg/convert-hour",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def convert_ggg_hour(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+        change_id = body.get("change_id")
+
+        if type(change_id) is not int or change_id <= 0 or change_id % 3600:
+            raise ValueError("change_id must be a positive hour-aligned integer")
+
+        blob_service = BlobServiceClient(
+            account_url="https://poe2tradecollectorf8fb3.blob.core.windows.net",
+            credential=DefaultAzureCredential(),
+        )
+
+        container = blob_service.get_container_client("poe2-prices")
+
+        blob_name, row_count = convert_hour(container, change_id)
+
+        return func.HttpResponse(
+            json.dumps({
+                "status": "success",
+                "change_id": change_id,
+                "parquet_blob": blob_name,
+                "rows": row_count,
+            }),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except (ValueError, KeyError, TypeError) as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("GGG Parquet conversion failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Conversion failed; check function logs"}),
+            status_code=500,
+            mimetype="application/json",
+        )
