@@ -12,7 +12,8 @@ from azure.storage.blob import BlobServiceClient
 from poe2scout_history import collect_history
 from ggg_backfill import run_backfill
 from ggg_parquet import convert_hour
-from ggg_compaction import compact_day
+from ggg_compaction import compact_day, compact_pending_days
+
 
 app = func.FunctionApp()
 
@@ -377,4 +378,35 @@ def compact_ggg_day(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Compaction failed; check function logs"}),
             status_code=500,
             mimetype="application/json",
+        )
+
+@app.timer_trigger(
+    schedule="0 */10 * * * *",
+    arg_name="compaction_timer",
+    run_on_startup=False,
+    use_monitor=True,
+)
+def auto_compact_ggg_days(
+    compaction_timer: func.TimerRequest,
+) -> None:
+    """Compact up to five completed UTC days every ten minutes."""
+
+    blob_service = BlobServiceClient(
+        account_url="https://poe2tradecollectorf8fb3.blob.core.windows.net",
+        credential=DefaultAzureCredential(),
+    )
+
+    container = blob_service.get_container_client("poe2-prices")
+    results = compact_pending_days(container, max_days=5)
+
+    logging.info(
+        "GGG daily compaction completed: %d days",
+        len(results),
+    )
+
+    for result in results:
+        logging.info(
+            "Compacted %s: %d rows",
+            result["date"],
+            result["rows"],
         )
