@@ -311,3 +311,27 @@ def convert_ggg_hour(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json",
         )
+
+@app.blob_trigger(
+    arg_name="blob",
+    path="poe2-prices/ggg/poe2/hourly/{change_id}.json",
+    connection="AzureWebJobsStorage",
+    source="EventGrid",
+)
+def convert_ggg_blob(blob: func.InputStream) -> None:
+    change_id = int(blob.name.rsplit("/", 1)[-1].removesuffix(".json"))
+
+    blob_service = BlobServiceClient(
+        account_url="https://poe2tradecollectorf8fb3.blob.core.windows.net",
+        credential=DefaultAzureCredential(),
+    )
+
+    container = blob_service.get_container_client("poe2-prices")
+    target, rows = convert_hour(container, change_id)
+
+    logging.info(
+        "Converted GGG snapshot %d to %s (%d rows)",
+        change_id,
+        target,
+        rows,
+    )
