@@ -12,6 +12,7 @@ from azure.storage.blob import BlobServiceClient
 from poe2scout_history import collect_history
 from ggg_backfill import run_backfill
 from ggg_parquet import convert_hour
+from ggg_compaction import compact_day
 
 app = func.FunctionApp()
 
@@ -335,3 +336,45 @@ def convert_ggg_blob(blob: func.InputStream) -> None:
         target,
         rows,
     )
+
+@app.route(
+    route="ggg/compact-day",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def compact_ggg_day(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+        day = body.get("date")
+
+        if not isinstance(day, str):
+            raise ValueError("date must be a YYYY-MM-DD string")
+
+        blob_service = BlobServiceClient(
+            account_url="https://poe2tradecollectorf8fb3.blob.core.windows.net",
+            credential=DefaultAzureCredential(),
+        )
+
+        container = blob_service.get_container_client("poe2-prices")
+        result = compact_day(container, day)
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except (ValueError, TypeError) as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("GGG daily compaction failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Compaction failed; check function logs"}),
+            status_code=500,
+            mimetype="application/json",
+        )
