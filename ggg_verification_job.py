@@ -342,6 +342,10 @@ def run_one(container):
                     f"{type(exc).__name__}: {exc}"
                 )
 
+            # Confirm we still own the job lease before
+            # publishing the verification result.
+            lease.renew()
+
             result_blob.upload_blob(
                 json.dumps(result, indent=2).encode(),
                 overwrite=False,
@@ -360,6 +364,8 @@ def run_one(container):
             state["status"] = "completed"
             state["finished_at"] = _now()
 
+        # Do not advance progress if our lease has expired.
+        lease.renew()
         _save(state_blob, state, lease=lease)
 
         return {
