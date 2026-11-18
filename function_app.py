@@ -17,6 +17,11 @@ from ggg_compaction import (
     compact_pending_days,
     preview_compacted_day_cleanup,
 )
+from ggg_verification_job import (
+    start_job,
+    status as verification_status,
+    run_one,
+)
 
 
 app = func.FunctionApp()
@@ -474,3 +479,103 @@ def cleanup_ggg_day(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json",
         )
+
+
+@app.route(
+    route="ggg/verification/start",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def start_ggg_verification(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+
+        if not isinstance(body, dict):
+            raise ValueError("JSON object required")
+
+        container = BlobServiceClient(
+            account_url=(
+                "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+            ),
+            credential=DefaultAzureCredential(),
+        ).get_container_client("poe2-prices")
+
+        result = start_job(
+            container,
+            version=body.get("version", 1),
+            limit=body.get("limit", 0),
+        )
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except ValueError as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("Verification start failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Start failed; check logs"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+@app.route(
+    route="ggg/verification/status",
+    methods=["GET"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def get_ggg_verification_status(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    try:
+        container = BlobServiceClient(
+            account_url=(
+                "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+            ),
+            credential=DefaultAzureCredential(),
+        ).get_container_client("poe2-prices")
+
+        return func.HttpResponse(
+            json.dumps(verification_status(container)),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("Verification status failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Status failed; check logs"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+@app.timer_trigger(
+    schedule="0 * * * * *",
+    arg_name="verification_timer",
+    run_on_startup=False,
+    use_monitor=True,
+)
+def auto_verify_ggg_days(
+    verification_timer: func.TimerRequest,
+) -> None:
+    container = BlobServiceClient(
+        account_url=(
+            "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+        ),
+        credential=DefaultAzureCredential(),
+    ).get_container_client("poe2-prices")
+
+    logging.info(
+        "GGG verification: %s",
+        run_one(container),
+    )
