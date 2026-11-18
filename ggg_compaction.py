@@ -10,6 +10,29 @@ import pyarrow.parquet as pq
 
 from ggg_parquet import ROOT, SCHEMA
 
+import hashlib
+from collections import Counter
+
+
+def table_fingerprint(table):
+    """Fingerprint all rows and columns in a deterministic order."""
+    digest = hashlib.sha256()
+
+    for batch in table.to_batches(max_chunksize=4096):
+        for row in batch.to_pylist():
+            encoded = json.dumps(
+                row,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+                allow_nan=False,
+            ).encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+
+    return digest.hexdigest()
+
+
 DAILY_ROOT = "analytics/ggg/poe2/daily_v1"
 MANIFEST_ROOT = "analytics/ggg/poe2/manifests/daily_v1"
 
@@ -119,6 +142,15 @@ def compact_day(container, day_string):
 
     if set(actual_ids) != set(expected_ids):
         raise RuntimeError("Output is missing expected hourly timestamps")
+    
+    input_hash = table_fingerprint(combined)
+    output_hash = table_fingerprint(verified)
+
+    if input_hash != output_hash:
+        raise RuntimeError(
+            "Daily Parquet content verification failed"
+        )
+
 
     record = {
         "status": "verified",
@@ -129,6 +161,9 @@ def compact_day(container, day_string):
         "output": target,
         "verified_at": datetime.now(timezone.utc).isoformat(),
         "cleanup_status": "disabled",
+        "input_sha256": input_hash,
+        "output_sha256": output_hash,
+        "verification_version": 2,
     }
 
     container.upload_blob(
