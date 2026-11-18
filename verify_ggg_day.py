@@ -1,4 +1,3 @@
-cat > /tmp/verify_ggg_day.py <<'PY'
 import hashlib
 import io
 import json
@@ -134,6 +133,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"\nRESULT: FAIL — {type(exc).__name__}: {exc}")
         sys.exit(1)
-PY
-
-python /tmp/verify_ggg_day.py 2025-01-01
