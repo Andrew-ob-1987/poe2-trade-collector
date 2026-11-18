@@ -14,6 +14,23 @@ import hashlib
 from collections import Counter
 
 
+def daily_paths(day):
+    prefix = f"{ROOT}/year={day:%Y}/month={day:%m}/day={day:%d}/"
+    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+
+    sources = [
+        f"{prefix}{int((start + timedelta(hours=h)).timestamp())}.parquet"
+        for h in range(24)
+    ]
+    target = (
+        f"{DAILY_ROOT}/year={day:%Y}/month={day:%m}/"
+        f"{day:%Y-%m-%d}.parquet"
+    )
+    manifest = (
+        f"{MANIFEST_ROOT}/year={day:%Y}/month={day:%m}/"
+        f"{day:%Y-%m-%d}.json"
+    )
+    return sources, target, manifest
 def table_fingerprint(table):
     """Fingerprint all rows and columns in a deterministic order."""
     digest = hashlib.sha256()
@@ -37,23 +54,6 @@ DAILY_ROOT = "analytics/ggg/poe2/daily_v1"
 MANIFEST_ROOT = "analytics/ggg/poe2/manifests/daily_v1"
 
 
-def daily_paths(day):
-    prefix = f"{ROOT}/year={day:%Y}/month={day:%m}/day={day:%d}/"
-    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
-
-    sources = [
-        f"{prefix}{int((start + timedelta(hours=h)).timestamp())}.parquet"
-        for h in range(24)
-    ]
-    target = (
-        f"{DAILY_ROOT}/year={day:%Y}/month={day:%m}/"
-        f"{day:%Y-%m-%d}.parquet"
-    )
-    manifest = (
-        f"{MANIFEST_ROOT}/year={day:%Y}/month={day:%m}/"
-        f"{day:%Y-%m-%d}.json"
-    )
-    return sources, target, manifest
 
 
 def compact_day(container, day_string):
@@ -132,8 +132,6 @@ def compact_day(container, day_string):
         item["change_id"] for item in source_counts
     ]
     actual_ids = verified.column("change_id").to_pylist()
-
-    from collections import Counter
 
     if Counter(actual_ids) != Counter(
         combined.column("change_id").to_pylist()
