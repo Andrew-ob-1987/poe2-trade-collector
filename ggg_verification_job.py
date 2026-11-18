@@ -15,6 +15,10 @@ from azure.storage.blob import BlobLeaseClient
 from ggg_compaction import daily_paths, table_fingerprint
 from ggg_parquet import SCHEMA
 
+from azure.core.exceptions import AzureError
+
+import logging
+
 ROOT = "analytics/ggg/poe2/verification_jobs/v1"
 MANIFEST_PREFIX = "analytics/ggg/poe2/manifests/daily_v1/"
 STATE = ROOT + "/active.json"
@@ -65,6 +69,9 @@ class RenewingLease:
             try:
                 self.lease.renew()
             except Exception:
+                logging.exception(
+                    "GGG verification job lease renewal failed"
+                )
                 break
 
     def __enter__(self):
@@ -325,6 +332,10 @@ def run_one(container):
             try:
                 result.update(verify_day(container, item))
                 result["result"] = "PASS"
+            except AzureError:
+                # Temporary storage failure: do not advance the cursor.
+                # The next scheduled invocation will retry this day.
+                raise
             except Exception as exc:
                 result["result"] = "FAIL"
                 result["error"] = (
