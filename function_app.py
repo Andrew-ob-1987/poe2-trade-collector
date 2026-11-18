@@ -12,7 +12,11 @@ from azure.storage.blob import BlobServiceClient
 from poe2scout_history import collect_history
 from ggg_backfill import run_backfill
 from ggg_parquet import convert_hour
-from ggg_compaction import compact_day, compact_pending_days
+from ggg_compaction import (
+    compact_day,
+    compact_pending_days,
+    preview_compacted_day_cleanup,
+)
 
 
 app = func.FunctionApp()
@@ -409,4 +413,64 @@ def auto_compact_ggg_days(
             "Compacted %s: %d rows",
             result["date"],
             result["rows"],
+        )
+
+
+@app.route(
+    route="ggg/cleanup-day",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def cleanup_ggg_day(req: func.HttpRequest) -> func.HttpResponse:
+    """Read-only preview of hourly Parquet cleanup."""
+    try:
+        body = req.get_json()
+
+        if not isinstance(body, dict):
+            raise ValueError("Request body must be a JSON object")
+
+        day = body.get("date")
+        dry_run = body.get("dry_run")
+
+        if not isinstance(day, str):
+            raise ValueError("date must be a YYYY-MM-DD string")
+
+        if dry_run is not True:
+            raise ValueError(
+                "Only dry_run=true is supported. "
+                "Deletion is disabled."
+            )
+
+        blob_service = BlobServiceClient(
+            account_url=(
+                "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+            ),
+            credential=DefaultAzureCredential(),
+        )
+
+        container = blob_service.get_container_client("poe2-prices")
+
+        result = preview_compacted_day_cleanup(container, day)
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except (ValueError, TypeError, KeyError) as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("GGG cleanup preview failed")
+        return func.HttpResponse(
+            json.dumps({
+                "error": "Cleanup preview failed; check function logs"
+            }),
+            status_code=500,
+            mimetype="application/json",
         )
