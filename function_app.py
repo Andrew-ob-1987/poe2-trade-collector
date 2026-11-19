@@ -22,7 +22,7 @@ from ggg_verification_job import (
     status as verification_status,
     run_one,
 )
-
+from ggg_manifest_upgrade import upgrade_one_day
 
 app = func.FunctionApp()
 
@@ -579,3 +579,61 @@ def auto_verify_ggg_days(
         "GGG verification: %s",
         run_one(container),
     )
+
+
+@app.route(
+    route="ggg/manifest-upgrade/day",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def upgrade_ggg_manifest_day(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    """Upgrade one independently verified daily manifest to V2."""
+    try:
+        body = req.get_json()
+
+        if not isinstance(body, dict):
+            raise ValueError("JSON object required")
+
+        day = body.get("date")
+        audit_job_id = body.get("audit_job_id")
+
+        if not isinstance(day, str):
+            raise ValueError("date must be a YYYY-MM-DD string")
+
+        container = BlobServiceClient(
+            account_url=(
+                "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+            ),
+            credential=DefaultAzureCredential(),
+        ).get_container_client("poe2-prices")
+
+        result = upgrade_one_day(
+            container,
+            day_string=day,
+            audit_job_id=audit_job_id,
+        )
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except (ValueError, TypeError, KeyError) as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("GGG manifest upgrade failed")
+        return func.HttpResponse(
+            json.dumps({
+                "error": "Manifest upgrade failed; check Azure logs"
+            }),
+            status_code=500,
+            mimetype="application/json",
+        )
