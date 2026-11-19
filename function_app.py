@@ -24,6 +24,12 @@ from ggg_verification_job import (
 )
 from ggg_manifest_upgrade import upgrade_one_day
 
+from ggg_manifest_upgrade_job import (
+    start_upgrade_job,
+    upgrade_status,
+    run_upgrade_one,
+)
+
 app = func.FunctionApp()
 
 BASE_URL = "https://poe.ninja/poe2/api/economy"
@@ -637,3 +643,93 @@ def upgrade_ggg_manifest_day(
             status_code=500,
             mimetype="application/json",
         )
+
+
+def _upgrade_container():
+    return BlobServiceClient(
+        account_url=(
+            "https://poe2tradecollectorf8fb3.blob.core.windows.net"
+        ),
+        credential=DefaultAzureCredential(),
+    ).get_container_client("poe2-prices")
+
+
+@app.route(
+    route="ggg/manifest-upgrade/start",
+    methods=["POST"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def start_ggg_manifest_upgrade(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+
+        if not isinstance(body, dict):
+            raise ValueError("JSON object required")
+
+        result = start_upgrade_job(
+            _upgrade_container(),
+            audit_job_id=body.get("audit_job_id"),
+        )
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except ValueError as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("Manifest upgrade job start failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Start failed; check Azure logs"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+@app.route(
+    route="ggg/manifest-upgrade/status",
+    methods=["GET"],
+    auth_level=func.AuthLevel.FUNCTION,
+)
+def get_ggg_manifest_upgrade_status(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    try:
+        result = upgrade_status(_upgrade_container())
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except Exception:
+        logging.exception("Manifest upgrade status failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Status failed; check Azure logs"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+@app.timer_trigger(
+    schedule="0 * * * * *",
+    arg_name="manifest_upgrade_timer",
+    run_on_startup=False,
+    use_monitor=True,
+)
+def auto_upgrade_ggg_manifests(
+    manifest_upgrade_timer: func.TimerRequest,
+) -> None:
+    result = run_upgrade_one(_upgrade_container())
+
+    logging.info("GGG manifest upgrade progress: %s", result)
